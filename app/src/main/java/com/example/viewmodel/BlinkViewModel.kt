@@ -1,5 +1,6 @@
 package com.example.viewmodel
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,9 @@ import com.example.domain.StatsRange
 import com.example.domain.SupportRequest
 import com.example.domain.ThemeMode
 import com.example.domain.UserAccount
+import com.example.platform.BlinkRuntimeCoordinator
+import com.example.platform.BlinkScreenService
+import com.example.platform.DevicePrefs
 import com.example.platform.ReminderNotificationHelper
 import com.example.platform.SoundPlayer
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -101,7 +106,8 @@ class BlinkViewModel(
     private val repository: BlinkRepository,
     val currentUserId: String,
     private val soundPlayer: SoundPlayer,
-    private val notificationHelper: ReminderNotificationHelper
+    private val notificationHelper: ReminderNotificationHelper,
+    private val devicePrefs: DevicePrefs? = null
 ) : ViewModel() {
 
     private companion object {
@@ -114,6 +120,9 @@ class BlinkViewModel(
     private val _runtime = MutableStateFlow(ReminderRuntimeState())
     val runtime: StateFlow<ReminderRuntimeState> = _runtime.asStateFlow()
 
+    private val _autoActiveOnScreenOn = MutableStateFlow(devicePrefs?.isAutoActiveOnScreenOn() ?: false)
+    val autoActiveOnScreenOn: StateFlow<Boolean> = _autoActiveOnScreenOn.asStateFlow()
+
     private val _selectedStatsRange = MutableStateFlow(StatsRange.WEEKLY)
     val selectedStatsRange: StateFlow<StatsRange> = _selectedStatsRange.asStateFlow()
 
@@ -121,14 +130,16 @@ class BlinkViewModel(
     val events: SharedFlow<BlinkEvent> = _events.asSharedFlow()
 
     private var tickerJob: Job? = null
+    private var isScreenInteractive: Boolean = true
+    private var isUiVisible: Boolean = true
 
     val uiState: StateFlow<UiState<BlinkDashboardData>> = combine(
         repository.observeUserAccount(currentUserId),
         repository.observeProfiles(currentUserId),
-        repository.observeSchedules(currentUserId),
-        repository.observeSessions(currentUserId),
-        repository.observePublishedAnnouncements(),
-        repository.observeUserSupportRequests(currentUserId)
+        repository.observeSchedules(currentUserId).onStart { emit(emptyList()) },
+        repository.observeSessions(currentUserId).onStart { emit(emptyList()) },
+        repository.observePublishedAnnouncements().onStart { emit(emptyList()) },
+        repository.observeUserSupportRequests(currentUserId).onStart { emit(emptyList()) }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         BlinkDashboardData(
@@ -199,6 +210,8 @@ class BlinkViewModel(
 
     private fun syncEngineWithConfig(data: BlinkDashboardData) {
         val account = data.account ?: return
+        devicePrefs?.saveReminderConfig(account, data.profiles, data.schedules)
+
         val nowDt = LocalDateTime.now()
         val quietNow = if (account.quietHoursEnabled) {
             val s = BlinkValidators.parseTimeOrNull(account.quietHoursStart)
@@ -210,14 +223,24 @@ class BlinkViewModel(
         val activeSched = data.schedules.firstOrNull {
             BlinkValidators.isScheduleActiveAt(it, nowDt.toLocalTime(), nowDt.dayOfWeek)
         }
-        val profile = data.activeProfile
+        val scheduledProfile = activeSched?.let { sched ->
+            data.profiles.firstOrNull { it.id == sched.profileId }
+        }
+        val profile = scheduledProfile ?: data.activeProfile
         val baseBlink = (profile?.blinkIntervalSeconds ?: 25L).toInt().coerceIn(5, 300)
         val effectiveBlink = if (account.focusModeActive) (baseBlink * 2).coerceAtMost(300) else baseBlink
+
+        val shouldAutoStart = _autoActiveOnScreenOn.value &&
+            isScreenInteractive &&
+            !quietNow &&
+            AccountStatus.fromRaw(account.accountStatus) != AccountStatus.SUSPENDED &&
+            (data.schedules.none { it.enabled } || activeSched != null)
 
         _runtime.update { curr ->
             if (curr.engineStatus == EngineStatus.IDLE) {
                 val eyeRestSec = ((profile?.eyeRestIntervalMinutes ?: 20L).toInt().coerceIn(5, 180)) * 60
                 curr.copy(
+                    engineStatus = if (shouldAutoStart) EngineStatus.RUNNING else EngineStatus.IDLE,
                     effectiveBlinkInterval = effectiveBlink,
                     nextBlinkSeconds = effectiveBlink,
                     nextEyeRestSeconds = eyeRestSec,
@@ -235,12 +258,55 @@ class BlinkViewModel(
         }
     }
 
+    fun setAutoActiveOnScreenOn(enabled: Boolean, context: Context) {
+        _autoActiveOnScreenOn.value = enabled
+        devicePrefs?.setAutoActiveOnScreenOn(enabled)
+        BlinkScreenService.syncWithPreference(
+            context = context,
+            enabled = enabled,
+            isSignedIn = currentUserId.isNotBlank()
+        )
+        if (enabled && _runtime.value.engineStatus == EngineStatus.IDLE && isScreenInteractive) {
+            startSession()
+        }
+    }
+
+    fun onUiVisibilityChanged(visible: Boolean) {
+        isUiVisible = visible
+        BlinkRuntimeCoordinator.isUiInForeground = visible
+        if (visible) {
+            if (isScreenInteractive) startTickerLoop()
+        } else {
+            // Stop 1-second UI ticker loop in background to conserve battery; BlinkScreenService takes over
+            tickerJob?.cancel()
+            tickerJob = null
+        }
+    }
+
+    fun onScreenInteractiveChanged(interactive: Boolean) {
+        isScreenInteractive = interactive
+        if (!interactive) {
+            tickerJob?.cancel()
+            tickerJob = null
+        } else {
+            if (isUiVisible) startTickerLoop()
+            if (_autoActiveOnScreenOn.value && _runtime.value.engineStatus == EngineStatus.IDLE) {
+                startSession()
+            }
+        }
+    }
+
     private fun startTickerLoop() {
-        tickerJob?.cancel()
+        if (tickerJob?.isActive == true) return
         tickerJob = viewModelScope.launch {
             while (isActive) {
                 delay(1000L)
-                onTickSecond()
+                if (!isUiVisible || !isScreenInteractive) break
+                val state = _runtime.value
+                // Low battery: skip work unless session is running or standalone eye-rest countdown is active
+                if (state.engineStatus == EngineStatus.RUNNING || state.isEyeRestActive || state.meetingRemainingSeconds > 0) {
+                    onTickSecond()
+                }
             }
         }
     }
@@ -265,7 +331,33 @@ class BlinkViewModel(
         }
 
         val state = _runtime.value
-        if (state.engineStatus != EngineStatus.RUNNING) return
+        if (state.engineStatus != EngineStatus.RUNNING) {
+            if (state.isEyeRestActive) {
+                val profile = currentData.activeProfile
+                val eyeRestIntervalSec = ((profile?.eyeRestIntervalMinutes ?: 20L).toInt().coerceIn(5, 180)) * 60
+                val eyeRestDurSec = (profile?.eyeRestDurationSeconds ?: 20L).toInt().coerceIn(5, 180)
+                val nextRemaining = state.eyeRestRemainingSeconds - 1
+                if (nextRemaining <= 0) {
+                    _runtime.update {
+                        it.copy(
+                            isEyeRestActive = false,
+                            nextEyeRestSeconds = eyeRestIntervalSec,
+                            eyeRestRemainingSeconds = eyeRestDurSec,
+                            sessionEyeRestsCompleted = it.sessionEyeRestsCompleted + 1
+                        )
+                    }
+                    notificationHelper.cancelEyeRestCue()
+                    if (account.soundEnabled && !state.isQuietHoursNow && !account.focusModeActive && !account.meetingModeActive) {
+                        viewModelScope.launch {
+                            soundPlayer.play(SoundType.CALM_CHIME, account.soundVolume.toFloat())
+                        }
+                    }
+                } else {
+                    _runtime.update { it.copy(eyeRestRemainingSeconds = nextRemaining) }
+                }
+            }
+            return
+        }
 
         // Handle snooze
         if (state.snoozedRemainingSeconds > 0) {
@@ -310,13 +402,14 @@ class BlinkViewModel(
                     !account.meetingModeActive
                 if (canPlaySound) {
                     val sound = SoundType.fromRaw(profile.soundType)
-                    val vol = (profile.soundVolume * account.soundVolume).toFloat()
+                    val vol = kotlin.math.sqrt((profile.soundVolume * account.soundVolume).coerceIn(0.0, 1.0)).toFloat()
                     viewModelScope.launch { soundPlayer.play(sound, vol) }
                 }
                 if (account.notificationsEnabled && !account.meetingModeActive) {
+                    val isBn = account.languageCode == "bn"
                     notificationHelper.postGentleBlinkCue(
                         "Blink25",
-                        "Take a soft, natural blink"
+                        if (isBn) "স্বাভাবিকভাবে চোখের পলক ফেলুন" else "Take a soft, natural blink"
                     )
                 }
             }
@@ -335,6 +428,7 @@ class BlinkViewModel(
                 restsCompleted += 1
                 newEyeRestSec = eyeRestIntervalSec
                 restRemaining = eyeRestDurSec
+                notificationHelper.cancelEyeRestCue()
                 if (account.soundEnabled && !quietNow && !account.focusModeActive && !account.meetingModeActive) {
                     viewModelScope.launch {
                         soundPlayer.play(SoundType.CALM_CHIME, account.soundVolume.toFloat())
@@ -348,9 +442,11 @@ class BlinkViewModel(
                 restRemaining = eyeRestDurSec
                 newEyeRestSec = eyeRestIntervalSec
                 if (!quietNow && account.notificationsEnabled && !account.meetingModeActive) {
+                    val isBn = account.languageCode == "bn"
                     notificationHelper.postEyeRestCue(
-                        "Blink25 • Eye Rest",
-                        "Look ~20 feet away for $eyeRestDurSec seconds."
+                        if (isBn) "Blink25 • চোখের বিশ্রাম" else "Blink25 • Eye Rest",
+                        if (isBn) "প্রায় ২০ ফুট দূরে $eyeRestDurSec সেকেন্ড তাকান।" else "Look ~20 feet away for $eyeRestDurSec seconds.",
+                        durationSeconds = eyeRestDurSec
                     )
                 }
                 if (account.soundEnabled && !quietNow && !account.focusModeActive && !account.meetingModeActive) {
@@ -455,6 +551,7 @@ class BlinkViewModel(
     }
 
     fun snoozeAll(minutes: Int = 5) {
+        notificationHelper.cancelAll()
         _runtime.update {
             it.copy(
                 snoozedRemainingSeconds = minutes.coerceIn(1, 60) * 60,
@@ -478,6 +575,7 @@ class BlinkViewModel(
     }
 
     fun dismissEyeRest() {
+        notificationHelper.cancelEyeRestCue()
         val data = (uiState.value as? UiState.Success)?.data
         val intervalSec = ((data?.activeProfile?.eyeRestIntervalMinutes ?: 20L).toInt().coerceIn(5, 180)) * 60
         val dur = (data?.activeProfile?.eyeRestDurationSeconds ?: 20L).toInt().coerceIn(5, 180)
@@ -491,6 +589,7 @@ class BlinkViewModel(
     }
 
     fun snoozeEyeRest() {
+        notificationHelper.cancelEyeRestCue()
         val data = (uiState.value as? UiState.Success)?.data
         val snoozeMin = (data?.activeProfile?.snoozeMinutes ?: 5L).toInt().coerceIn(1, 60)
         _runtime.update {
@@ -503,6 +602,7 @@ class BlinkViewModel(
     }
 
     fun skipEyeRest() {
+        notificationHelper.cancelEyeRestCue()
         val data = (uiState.value as? UiState.Success)?.data
         val intervalSec = ((data?.activeProfile?.eyeRestIntervalMinutes ?: 20L).toInt().coerceIn(5, 180)) * 60
         _runtime.update {

@@ -34,7 +34,10 @@ service cloud.firestore {
     }
 
     function isValidSoundType(soundType) {
-      return soundType in ['SOFT_TICK', 'GENTLE_BELL', 'SOFT_POP', 'CALM_CHIME', 'AIR_TONE', 'QUIET_PULSE', 'NO_SOUND'];
+      return soundType in [
+        'SOFT_TICK', 'GENTLE_BELL', 'SOFT_POP', 'CALM_CHIME', 'AIR_TONE', 'QUIET_PULSE',
+        'WATER_DROP', 'CRYSTAL_PING', 'BAMBOO_TAP', 'MORNING_BIRD', 'BRIGHT_CHORD', 'NO_SOUND'
+      ];
     }
 
     function isValidTimeHHMM(value) {

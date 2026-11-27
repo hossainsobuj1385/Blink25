@@ -22,6 +22,11 @@ enum class SoundType(val displayNameEn: String, val displayNameBn: String) {
     CALM_CHIME("Calm Chime", "শান্ত ধ্বনি"),
     AIR_TONE("Air Tone", "বাতাসের সুর"),
     QUIET_PULSE("Quiet Pulse", "নীরব স্পন্দন"),
+    WATER_DROP("Water Drop", "জলের ফোঁটা"),
+    CRYSTAL_PING("Crystal Ping", "ক্রিস্টাল পিং"),
+    BAMBOO_TAP("Bamboo Tap", "বাঁশের টোকা"),
+    MORNING_BIRD("Morning Chirp", "পাখির ডাক"),
+    BRIGHT_CHORD("Bright Chord", "উজ্জ্বল সুর"),
     NO_SOUND("No Sound", "নিঃশব্দ");
 
     companion object {

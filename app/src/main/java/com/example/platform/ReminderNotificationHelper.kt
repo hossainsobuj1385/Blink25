@@ -1,6 +1,7 @@
 package com.example.platform
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -18,8 +19,11 @@ class ReminderNotificationHelper(private val context: Context) {
     companion object {
         const val CHANNEL_BLINK = "blink25_gentle_blink"
         const val CHANNEL_EYE_REST = "blink25_eye_rest"
+        const val CHANNEL_SCREEN_MONITOR = "blink25_screen_monitor"
         private const val NOTIF_BLINK_ID = 2501
         private const val NOTIF_EYE_REST_ID = 2502
+        const val NOTIF_SCREEN_MONITOR_ID = 2503
+        private const val BLINK_TIMEOUT_MS = 4500L
     }
 
     init {
@@ -45,7 +49,7 @@ class ReminderNotificationHelper(private val context: Context) {
                 "Gentle Blink Reminders",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Discreet low-priority blink cues that never interrupt focus"
+                description = "Discreet blink cues that auto-dismiss after a few seconds"
                 setSound(null, null)
                 enableVibration(false)
             }
@@ -54,11 +58,22 @@ class ReminderNotificationHelper(private val context: Context) {
                 "Eye-Rest Breaks",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Periodic 20-20-20 eye-rest break reminders"
+                description = "Periodic 20-20-20 eye-rest break reminders that auto-dismiss when finished"
                 setSound(null, null)
+            }
+            val monitorChannel = NotificationChannel(
+                CHANNEL_SCREEN_MONITOR,
+                "Screen-Active Eye Guard",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Lightweight background monitor active only while screen is on"
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
             }
             manager.createNotificationChannel(blinkChannel)
             manager.createNotificationChannel(restChannel)
+            manager.createNotificationChannel(monitorChannel)
         }
     }
 
@@ -80,7 +95,7 @@ class ReminderNotificationHelper(private val context: Context) {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
             .setAutoCancel(true)
-            .setTimeoutAfter(8000L)
+            .setTimeoutAfter(BLINK_TIMEOUT_MS)
             .setContentIntent(pendingIntent)
             .build()
         try {
@@ -90,7 +105,7 @@ class ReminderNotificationHelper(private val context: Context) {
         }
     }
 
-    fun postEyeRestCue(title: String, body: String) {
+    fun postEyeRestCue(title: String, body: String, durationSeconds: Int = 20) {
         if (!hasNotificationPermission()) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -101,6 +116,7 @@ class ReminderNotificationHelper(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val timeoutMs = (durationSeconds.coerceIn(5, 180) * 1000L)
         val notification = NotificationCompat.Builder(context, CHANNEL_EYE_REST)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
@@ -108,6 +124,7 @@ class ReminderNotificationHelper(private val context: Context) {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setSilent(true)
             .setAutoCancel(true)
+            .setTimeoutAfter(timeoutMs)
             .setContentIntent(pendingIntent)
             .build()
         try {
@@ -117,7 +134,38 @@ class ReminderNotificationHelper(private val context: Context) {
         }
     }
 
+    fun buildScreenMonitorNotification(title: String, body: String): Notification {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            2,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(context, CHANNEL_SCREEN_MONITOR)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setContentIntent(pendingIntent)
+            .build()
+    }
+
+    fun cancelBlinkCue() {
+        NotificationManagerCompat.from(context).cancel(NOTIF_BLINK_ID)
+    }
+
+    fun cancelEyeRestCue() {
+        NotificationManagerCompat.from(context).cancel(NOTIF_EYE_REST_ID)
+    }
+
     fun cancelAll() {
-        NotificationManagerCompat.from(context).cancelAll()
+        NotificationManagerCompat.from(context).cancel(NOTIF_BLINK_ID)
+        NotificationManagerCompat.from(context).cancel(NOTIF_EYE_REST_ID)
     }
 }

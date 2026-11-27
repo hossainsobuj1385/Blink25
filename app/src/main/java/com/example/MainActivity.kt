@@ -1,7 +1,11 @@
 package com.example
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PowerManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,6 +43,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -52,8 +57,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -62,16 +71,20 @@ import com.example.data.BlinkRepository
 import com.example.domain.ThemeMode
 import com.example.i18n.LocalStrings
 import com.example.i18n.stringsForLanguage
+import com.example.platform.BlinkScreenService
+import com.example.platform.DevicePrefs
 import com.example.platform.ReminderNotificationHelper
 import com.example.platform.SoundPlayer
 import com.example.platform.authStateFlow
 import com.example.platform.signOut
+import com.example.ui.screens.AboutBlinkScreen
 import com.example.ui.screens.AdminScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ProfilesAndSchedulesScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatisticsScreen
+import com.example.ui.screens.UserGuideScreen
 import com.example.ui.theme.Blink25Theme
 import com.example.viewmodel.BlinkEvent
 import com.example.viewmodel.BlinkViewModel
@@ -93,26 +106,35 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot(auth: FirebaseAuth = Firebase.auth) {
+    val context = LocalContext.current
+    val devicePrefs = remember(context) { DevicePrefs(context.applicationContext) }
     val currentUser by auth.authStateFlow()
         .collectAsStateWithLifecycle(initialValue = auth.currentUser)
 
     val user = currentUser
     if (user == null) {
-        Blink25Theme(themeMode = ThemeMode.SYSTEM) {
-            CompositionLocalProvider(LocalStrings provides stringsForLanguage("en")) {
+        LaunchedEffect(Unit) {
+            BlinkScreenService.syncWithPreference(context, enabled = false, isSignedIn = false)
+        }
+        Blink25Theme(themeMode = devicePrefs.getCachedThemeMode()) {
+            CompositionLocalProvider(LocalStrings provides stringsForLanguage(devicePrefs.getCachedLanguageCode())) {
                 AuthScreen(onAuthSuccess = {})
             }
         }
     } else {
         key(user.uid) {
-            AuthenticatedBlinkShell(currentUserId = user.uid)
+            AuthenticatedBlinkShell(currentUserId = user.uid, devicePrefs = devicePrefs)
         }
     }
 }
 
 @Composable
-private fun AuthenticatedBlinkShell(currentUserId: String) {
+private fun AuthenticatedBlinkShell(
+    currentUserId: String,
+    devicePrefs: DevicePrefs
+) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
     val notificationHelper = remember(context) { ReminderNotificationHelper(context.applicationContext) }
@@ -130,7 +152,8 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
                     repository = repo,
                     currentUserId = currentUserId,
                     soundPlayer = SoundPlayer(),
-                    notificationHelper = ReminderNotificationHelper(app)
+                    notificationHelper = ReminderNotificationHelper(app),
+                    devicePrefs = DevicePrefs(app)
                 )
             }
         }
@@ -138,13 +161,61 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val runtime by viewModel.runtime.collectAsStateWithLifecycle()
+    val autoActiveOnScreenOn by viewModel.autoActiveOnScreenOn.collectAsStateWithLifecycle()
     val statsRange by viewModel.selectedStatsRange.collectAsStateWithLifecycle()
     val adminData by viewModel.adminState.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAdminScreen by remember { mutableStateOf(false) }
+    var showGuideScreen by remember { mutableStateOf(false) }
+    var showAboutScreen by remember { mutableStateOf(false) }
     var hideBottomNav by remember { mutableStateOf(false) }
     var exportedJson by remember { mutableStateOf<String?>(null) }
+
+    // Keep screen-on background service synced with user preference on startup
+    LaunchedEffect(autoActiveOnScreenOn, currentUserId) {
+        BlinkScreenService.syncWithPreference(
+            context = context,
+            enabled = autoActiveOnScreenOn,
+            isSignedIn = currentUserId.isNotBlank()
+        )
+    }
+
+    // Pause 1-second UI ticker in background to minimize battery; monitor screen ON/OFF interactively
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onUiVisibilityChanged(true)
+                Lifecycle.Event.ON_STOP -> viewModel.onUiVisibilityChanged(false)
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        val pm = context.getSystemService(PowerManager::class.java)
+        viewModel.onScreenInteractiveChanged(pm?.isInteractive ?: true)
+
+        val screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> viewModel.onScreenInteractiveChanged(false)
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> viewModel.onScreenInteractiveChanged(true)
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        ContextCompat.registerReceiver(context, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            runCatching { context.unregisterReceiver(screenReceiver) }
+            viewModel.onUiVisibilityChanged(false)
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
@@ -154,6 +225,7 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
                     exportedJson = event.json
                 }
                 BlinkEvent.AccountDeleted -> {
+                    BlinkScreenService.syncWithPreference(context, enabled = false, isSignedIn = false)
                     signOut(credentialManager, scope)
                 }
             }
@@ -161,8 +233,8 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
     }
 
     val successData = (uiState as? UiState.Success)?.data
-    val themeMode = ThemeMode.fromRaw(successData?.account?.themeMode)
-    val languageCode = successData?.account?.languageCode ?: "en"
+    val themeMode = successData?.account?.themeMode?.let(ThemeMode::fromRaw) ?: devicePrefs.getCachedThemeMode()
+    val languageCode = successData?.account?.languageCode ?: devicePrefs.getCachedLanguageCode()
 
     Blink25Theme(themeMode = themeMode) {
         CompositionLocalProvider(LocalStrings provides stringsForLanguage(languageCode)) {
@@ -175,6 +247,18 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
                     onToggleAnnouncement = viewModel::toggleAnnouncement,
                     onSetUserStatus = viewModel::setUserAccountStatus,
                     onBack = { showAdminScreen = false }
+                )
+            } else if (showGuideScreen) {
+                UserGuideScreen(
+                    languageCode = languageCode,
+                    onFullScreenMode = { hideBottomNav = it },
+                    onDismiss = { showGuideScreen = false }
+                )
+            } else if (showAboutScreen) {
+                AboutBlinkScreen(
+                    languageCode = languageCode,
+                    onFullScreenMode = { hideBottomNav = it },
+                    onDismiss = { showAboutScreen = false }
                 )
             } else {
                 val navItems = listOf(
@@ -282,7 +366,13 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
                                                     onToggleSound = viewModel::toggleSound,
                                                     onToggleFocusMode = viewModel::toggleFocusMode,
                                                     onActivateMeetingMode = viewModel::activateMeetingMode,
-                                                    onCancelMeetingMode = viewModel::cancelMeetingMode
+                                                    onCancelMeetingMode = viewModel::cancelMeetingMode,
+                                                    autoActiveOnScreenOn = autoActiveOnScreenOn,
+                                                    hasNotificationPermission = notificationHelper.hasNotificationPermission(),
+                                                    onToggleAutoActive = { enabled ->
+                                                        viewModel.setAutoActiveOnScreenOn(enabled, context)
+                                                    },
+                                                    onOpenGuide = { showGuideScreen = true }
                                                 )
                                                 1 -> ProfilesAndSchedulesScreen(
                                                     data = data,
@@ -318,8 +408,17 @@ private fun AuthenticatedBlinkShell(currentUserId: String) {
                                                     onExportData = viewModel::exportUserData,
                                                     onSubmitSupportRequest = viewModel::submitSupportRequest,
                                                     onOpenAdminPanel = { showAdminScreen = true },
-                                                    onSignOut = { signOut(credentialManager, scope) },
+                                                    onSignOut = {
+                                                        BlinkScreenService.syncWithPreference(context, enabled = false, isSignedIn = false)
+                                                        signOut(credentialManager, scope)
+                                                    },
                                                     onDeleteAccount = { viewModel.deleteAccount {} },
+                                                    autoActiveOnScreenOn = autoActiveOnScreenOn,
+                                                    onToggleAutoActive = { enabled ->
+                                                        viewModel.setAutoActiveOnScreenOn(enabled, context)
+                                                    },
+                                                    onOpenGuide = { showGuideScreen = true },
+                                                    onOpenAbout = { showAboutScreen = true },
                                                     onFullScreenMode = { hideBottomNav = it }
                                                 )
                                             }

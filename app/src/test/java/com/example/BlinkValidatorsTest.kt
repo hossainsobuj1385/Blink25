@@ -128,4 +128,19 @@ class BlinkValidatorsTest {
         assertEquals(3, monthly.totalSessions)
         assertEquals(2400L, monthly.totalDurationSeconds)
     }
+
+    @Test
+    fun soundTypeValidation_supportsAllTwelveTonesIncludingNewOptions() {
+        val expectedNew = listOf("WATER_DROP", "CRYSTAL_PING", "BAMBOO_TAP", "MORNING_BIRD", "BRIGHT_CHORD")
+        assertEquals(12, com.example.domain.SoundType.entries.size)
+        expectedNew.forEach { soundName ->
+            val parsed = com.example.domain.SoundType.fromRaw(soundName)
+            assertEquals(soundName, parsed.name)
+            assertTrue(parsed.displayNameEn.isNotBlank())
+            assertTrue(parsed.displayNameBn.isNotBlank())
+            assertTrue(
+                BlinkValidators.validateUserSettingsUpdates(mapOf("soundType" to soundName)).isValid
+            )
+        }
+    }
 }

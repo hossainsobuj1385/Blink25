@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,12 +31,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Groups
@@ -48,6 +55,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -75,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.domain.AccountStatus
 import com.example.i18n.LocalStrings
+import com.example.ui.components.WorkSessionStatusCard
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.viewmodel.BlinkDashboardData
 import com.example.viewmodel.EngineStatus
@@ -100,6 +109,10 @@ fun DashboardScreen(
     onToggleFocusMode: () -> Unit,
     onActivateMeetingMode: (Int) -> Unit,
     onCancelMeetingMode: () -> Unit,
+    autoActiveOnScreenOn: Boolean = true,
+    hasNotificationPermission: Boolean = true,
+    onToggleAutoActive: (Boolean) -> Unit = {},
+    onOpenGuide: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val strings = LocalStrings.current
@@ -110,6 +123,15 @@ fun DashboardScreen(
         data.sessions.filter { it.dayKey == todayKey }
     }
     var showMeetingPicker by remember { mutableStateOf(false) }
+    var permissionGrantedLocally by remember(hasNotificationPermission) {
+        mutableStateOf(hasNotificationPermission)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        permissionGrantedLocally = granted
+        onToggleAutoActive(true)
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isWide = maxWidth >= 660.dp
@@ -119,14 +141,17 @@ fun DashboardScreen(
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header + Status
+            // Header + Guide Shortcut + Status
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
                             text = strings.appName,
                             style = MaterialTheme.typography.headlineMedium,
@@ -138,7 +163,22 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    StatusBadge(accountStatus = account?.accountStatus, runtime = runtime)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        IconButton(
+                            onClick = onOpenGuide,
+                            modifier = Modifier.testTag("open_guide_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                                contentDescription = strings.guideTitle,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        StatusBadge(accountStatus = account?.accountStatus, runtime = runtime)
+                    }
                 }
             }
 
@@ -261,6 +301,40 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+
+            // Screen-On Auto-Active Card (one-time permission + schedule-aware background guard)
+            item {
+                AutoActiveScreenGuardCard(
+                    enabled = autoActiveOnScreenOn,
+                    hasNotificationPermission = permissionGrantedLocally,
+                    activeScheduleName = runtime.activeScheduleName,
+                    onToggle = { enabled ->
+                        if (enabled && !permissionGrantedLocally && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            onToggleAutoActive(enabled)
+                        }
+                    }
+                )
+            }
+
+            // Work Session Status + Eye-Rest Timer Start/Stop Card
+            item {
+                WorkSessionStatusCard(
+                    engineStatus = runtime.engineStatus,
+                    sessionElapsedSeconds = runtime.sessionElapsedSeconds,
+                    profileName = activeProfile?.name ?: "Work",
+                    activeScheduleName = runtime.activeScheduleName,
+                    isQuietHoursNow = runtime.isQuietHoursNow,
+                    accountStatus = account?.accountStatus,
+                    isEyeRestActive = runtime.isEyeRestActive,
+                    nextEyeRestSeconds = runtime.nextEyeRestSeconds,
+                    eyeRestRemainingSeconds = runtime.eyeRestRemainingSeconds,
+                    eyeRestDurationSeconds = (activeProfile?.eyeRestDurationSeconds ?: 20L).toInt(),
+                    onStartEyeRest = onStartEyeRestNow,
+                    onStopEyeRest = onDismissEyeRest
+                )
             }
 
             // Main Adaptive Grid: Timer Hero + Eye-Rest / Quick Settings
@@ -709,11 +783,15 @@ private fun EyeRestCard(
                             onClick = onStartRestNow,
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = 48.dp)
                                 .testTag("start_eye_rest_button")
                         ) {
                             Text(strings.startRestNow)
                         }
-                        OutlinedButton(onClick = onSnooze) {
+                        OutlinedButton(
+                            onClick = onSnooze,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
                             Text(strings.snooze)
                         }
                     } else {
@@ -723,14 +801,23 @@ private fun EyeRestCard(
                                 containerColor = MaterialTheme.colorScheme.tertiary,
                                 contentColor = MaterialTheme.colorScheme.onTertiary
                             ),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("stop_eye_rest_button")
                         ) {
-                            Text(strings.dismiss)
+                            Text(strings.stopEyeRest)
                         }
-                        OutlinedButton(onClick = onSnooze) {
+                        OutlinedButton(
+                            onClick = onSnooze,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
                             Text(strings.snooze)
                         }
-                        TextButton(onClick = onSkip) {
+                        TextButton(
+                            onClick = onSkip,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
                             Text(strings.skip)
                         }
                     }
@@ -956,6 +1043,83 @@ private fun MetricPill(label: String, value: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun AutoActiveScreenGuardCard(
+    enabled: Boolean,
+    hasNotificationPermission: Boolean,
+    activeScheduleName: String?,
+    onToggle: (Boolean) -> Unit
+) {
+    val strings = LocalStrings.current
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+            else MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("auto_active_card")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (enabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Bolt,
+                        contentDescription = null,
+                        tint = if (enabled) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = strings.autoActiveTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            strings.autoActivePermissionHint
+                        } else if (enabled && activeScheduleName != null) {
+                            "${strings.currentSchedule}: $activeScheduleName"
+                        } else {
+                            strings.autoActiveDesc
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                modifier = Modifier.testTag("dashboard_auto_active_switch")
+            )
+        }
     }
 }
 

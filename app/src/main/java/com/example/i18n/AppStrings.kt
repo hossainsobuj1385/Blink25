@@ -34,9 +34,15 @@ data class BlinkStrings(
     val snooze: String,
     val skip: String,
     val startRestNow: String,
+    val startEyeRest: String,
+    val stopEyeRest: String,
     val eyeRestTitle: String,
+    val eyeRestTimerLabel: String,
+    val eyeRestRestingNow: String,
     val eyeRestGuidance: String,
     val twentyTwentyTwentyNote: String,
+    val workSessionStatusTitle: String,
+    val workSessionProfileLabel: String,
     val quickSettings: String,
     val remindersEnabled: String,
     val soundOn: String,
@@ -109,7 +115,14 @@ data class BlinkStrings(
     val sendSupportRequest: String,
     val adminPanelTitle: String,
     val aboutTitle: String,
-    val aboutDisclaimer: String
+    val aboutDisclaimer: String,
+    val autoActiveTitle: String,
+    val autoActiveDesc: String,
+    val autoActivePermissionHint: String,
+    val enableAutoActive: String,
+    val guideTitle: String,
+    val whatIsBlinkTitle: String,
+    val whyNeededTitle: String
 )
 
 fun englishStrings(): BlinkStrings = BlinkStrings(
@@ -144,9 +157,15 @@ fun englishStrings(): BlinkStrings = BlinkStrings(
     snooze = "Snooze",
     skip = "Skip",
     startRestNow = "Start Rest",
+    startEyeRest = "Start Eye Rest",
+    stopEyeRest = "Stop Eye Rest",
     eyeRestTitle = "Eye Rest Break",
+    eyeRestTimerLabel = "Eye-Rest Timer",
+    eyeRestRestingNow = "Resting now",
     eyeRestGuidance = "Look toward something ~20 feet (6 m) away and let your focus soften.",
     twentyTwentyTwentyNote = "Inspired by the 20-20-20 wellness habit suggestion (not a medical guarantee).",
+    workSessionStatusTitle = "Work Session Status",
+    workSessionProfileLabel = "Profile",
     quickSettings = "Quick Controls",
     remindersEnabled = "Reminders",
     soundOn = "Sound On",
@@ -219,7 +238,14 @@ fun englishStrings(): BlinkStrings = BlinkStrings(
     sendSupportRequest = "Send Support Request",
     adminPanelTitle = "Admin Console",
     aboutTitle = "About Blink25",
-    aboutDisclaimer = "Blink25 v1.0 • A tiny reminder. A healthier screen habit."
+    aboutDisclaimer = "Blink25 v1.0 • A tiny reminder. A healthier screen habit.",
+    autoActiveTitle = "Auto-Active When Device Is On",
+    autoActiveDesc = "Runs automatically while your screen is on, follows your time schedules, and sleeps when screen turns off to save battery.",
+    autoActivePermissionHint = "Grant notification permission once so screen-on reminders run automatically.",
+    enableAutoActive = "Enable Auto-Active",
+    guideTitle = "User Guide",
+    whatIsBlinkTitle = "What Is Blink25?",
+    whyNeededTitle = "Why Blink25 Is Needed"
 )
 
 fun bengaliStrings(): BlinkStrings = BlinkStrings(
@@ -254,9 +280,15 @@ fun bengaliStrings(): BlinkStrings = BlinkStrings(
     snooze = "স্নুজ",
     skip = "এড়িয়ে যান",
     startRestNow = "বিশ্রাম শুরু",
+    startEyeRest = "বিশ্রাম শুরু করুন",
+    stopEyeRest = "বিশ্রাম থামান",
     eyeRestTitle = "চোখের বিশ্রাম বিরতি",
+    eyeRestTimerLabel = "চোখের বিশ্রাম টাইমার",
+    eyeRestRestingNow = "এখন বিশ্রাম চলছে",
     eyeRestGuidance = "প্রায় ২০ ফুট (৬ মিটার) দূরের কোনো কিছুর দিকে শান্তভাবে তাকান।",
     twentyTwentyTwentyNote = "প্রচলিত ২০-২০-২০ সুস্থতা পরামর্শের উপর ভিত্তি করে (চিকিৎসা নিশ্চয়তা নয়)।",
+    workSessionStatusTitle = "কাজের সেশনের অবস্থা",
+    workSessionProfileLabel = "প্রোফাইল",
     quickSettings = "দ্রুত নিয়ন্ত্রণ",
     remindersEnabled = "রিমাইন্ডার",
     soundOn = "শব্দ চালু",
@@ -329,7 +361,14 @@ fun bengaliStrings(): BlinkStrings = BlinkStrings(
     sendSupportRequest = "সহায়তা অনুরোধ পাঠান",
     adminPanelTitle = "অ্যাডমিন কনসোল",
     aboutTitle = "Blink25 সম্পর্কে",
-    aboutDisclaimer = "Blink25 v1.0 • ছোট একটি রিমাইন্ডার। সুস্থ স্ক্রিন অভ্যাস।"
+    aboutDisclaimer = "Blink25 v1.0 • ছোট একটি রিমাইন্ডার। সুস্থ স্ক্রিন অভ্যাস।",
+    autoActiveTitle = "ডিভাইস অন থাকলে অটো চালু",
+    autoActiveDesc = "স্ক্রিন চালু থাকলে অটো কাজ করে, আপনার সময়সূচি অনুসরণ করে এবং স্ক্রিন বন্ধ হলে চার্জ বাঁচাতে থেমে যায়।",
+    autoActivePermissionHint = "একবার নোটিফিকেশন অনুমতি দিলে স্ক্রিন অন থাকলেই রিমাইন্ডার অটো চলবে।",
+    enableAutoActive = "অটো-অ্যাক্টিভ চালু করুন",
+    guideTitle = "ব্যবহার নির্দেশিকা (গাইড)",
+    whatIsBlinkTitle = "Blink25 কী?",
+    whyNeededTitle = "কেন Blink25 প্রয়োজন?"
 )
 
 fun stringsForLanguage(code: String): BlinkStrings =

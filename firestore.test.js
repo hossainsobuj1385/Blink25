@@ -165,11 +165,12 @@ test("Profiles, Schedules, Sessions, and Support Requests: CRUD & schema validat
     })
   );
 
-  // Valid partial update on profile
+  // Valid partial update on profile including new soundType
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).collection("profiles").doc("work_default").update({
       blinkIntervalSeconds: 30,
       earlyWarningSeconds: 10,
+      soundType: "CRYSTAL_PING",
       updatedAt: new Date(Date.now() - 500),
     })
   );

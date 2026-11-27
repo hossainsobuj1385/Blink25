@@ -23,11 +23,14 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AdminPanelSettings
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Share
@@ -91,6 +94,10 @@ fun SettingsScreen(
     onOpenAdminPanel: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
+    autoActiveOnScreenOn: Boolean = false,
+    onToggleAutoActive: (Boolean) -> Unit = {},
+    onOpenGuide: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     onFullScreenMode: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -114,6 +121,9 @@ fun SettingsScreen(
         onResult = { granted ->
             permissionGranted = granted
             onUpdateSettings(mapOf("notificationsEnabled" to granted))
+            if (granted) {
+                onToggleAutoActive(true)
+            }
         }
     )
 
@@ -300,7 +310,15 @@ fun SettingsScreen(
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "${(volume * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         Slider(
                             value = volume,
                             onValueChange = { volume = it },
@@ -309,9 +327,43 @@ fun SettingsScreen(
                             },
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = { onPreviewSound(selectedSound, volume) }) {
+                        FilledTonalButton(onClick = { onPreviewSound(selectedSound, volume) }) {
                             Icon(Icons.Outlined.VolumeUp, contentDescription = strings.previewSound)
+                            Text("  ${strings.previewSound}")
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Outlined.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text(strings.autoActiveTitle, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    strings.autoActiveDesc,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = autoActiveOnScreenOn,
+                            onCheckedChange = { turnOn ->
+                                if (turnOn && !permissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    onToggleAutoActive(turnOn)
+                                }
+                            },
+                            modifier = Modifier.testTag("settings_auto_active_switch")
+                        )
                     }
 
                     Row(
@@ -394,6 +446,40 @@ fun SettingsScreen(
                         Text(strings.save)
                     }
                 }
+        }
+
+        // User Guide & About Blink25
+        Card(
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(strings.aboutTitle, style = MaterialTheme.typography.titleMedium)
+
+                FilledTonalButton(
+                    onClick = onOpenGuide,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_guide_settings_button")
+                ) {
+                    Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null)
+                    Text("  ${strings.guideTitle}")
+                }
+
+                OutlinedButton(
+                    onClick = onOpenAbout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_about_settings_button")
+                ) {
+                    Icon(Icons.Outlined.Info, contentDescription = null)
+                    Text("  ${strings.aboutTitle}")
+                }
+            }
         }
 
         // Privacy, Export, Support & Delete Account
