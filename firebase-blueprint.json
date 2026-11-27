@@ -1,0 +1,162 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Authenticated user's Blink25 account preferences, active mode, and quiet hours",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "accountStatus": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "themeMode": { "type": "string", "enum": ["SYSTEM", "LIGHT", "DARK"] },
+        "languageCode": { "type": "string", "enum": ["en", "bn"] },
+        "activeProfileId": { "type": "string" },
+        "soundEnabled": { "type": "boolean" },
+        "soundType": { "type": "string", "enum": ["SOFT_TICK", "GENTLE_BELL", "SOFT_POP", "CALM_CHIME", "AIR_TONE", "QUIET_PULSE", "NO_SOUND"] },
+        "soundVolume": { "type": "number" },
+        "notificationsEnabled": { "type": "boolean" },
+        "focusModeActive": { "type": "boolean" },
+        "meetingModeActive": { "type": "boolean" },
+        "meetingModeMinutes": { "type": "integer" },
+        "quietHoursEnabled": { "type": "boolean" },
+        "quietHoursStart": { "type": "string" },
+        "quietHoursEnd": { "type": "string" },
+        "timezone": { "type": "string" },
+        "reducedMotion": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Set via FieldValue.serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Set via FieldValue.serverTimestamp()" }
+      },
+      "required": ["userId", "displayName", "accountStatus", "themeMode", "languageCode", "activeProfileId", "soundEnabled", "soundType", "soundVolume", "notificationsEnabled", "focusModeActive", "meetingModeActive", "meetingModeMinutes", "quietHoursEnabled", "quietHoursStart", "quietHoursEnd", "timezone", "reducedMotion", "createdAt", "updatedAt"]
+    },
+    "ReminderProfile": {
+      "title": "ReminderProfile",
+      "description": "Configurable blink and eye-rest profile",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "profileType": { "type": "string", "enum": ["WORK", "STUDY", "GAMING", "MEETING", "RELAX", "CUSTOM"] },
+        "blinkIntervalSeconds": { "type": "integer" },
+        "earlyWarningSeconds": { "type": "integer" },
+        "eyeRestIntervalMinutes": { "type": "integer" },
+        "eyeRestDurationSeconds": { "type": "integer" },
+        "twentyTwentyTwentyEnabled": { "type": "boolean" },
+        "soundType": { "type": "string", "enum": ["SOFT_TICK", "GENTLE_BELL", "SOFT_POP", "CALM_CHIME", "AIR_TONE", "QUIET_PULSE", "NO_SOUND"] },
+        "soundVolume": { "type": "number" },
+        "visualReminderEnabled": { "type": "boolean" },
+        "snoozeMinutes": { "type": "integer" },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "profileType", "blinkIntervalSeconds", "earlyWarningSeconds", "eyeRestIntervalMinutes", "eyeRestDurationSeconds", "twentyTwentyTwentyEnabled", "soundType", "soundVolume", "visualReminderEnabled", "snoozeMinutes", "enabled", "createdAt", "updatedAt"]
+    },
+    "ReminderSchedule": {
+      "title": "ReminderSchedule",
+      "description": "Weekly automated reminder schedule mapped to a profile",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "profileId": { "type": "string" },
+        "scheduleName": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "weekdays": { "type": "array" },
+        "timezone": { "type": "string" },
+        "blinkEnabled": { "type": "boolean" },
+        "eyeRestEnabled": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "profileId", "scheduleName", "startTime", "endTime", "weekdays", "timezone", "blinkEnabled", "eyeRestEnabled", "enabled", "createdAt", "updatedAt"]
+    },
+    "SessionSummary": {
+      "title": "SessionSummary",
+      "description": "Aggregated wellness session summary written on session completion",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "profileId": { "type": "string" },
+        "profileName": { "type": "string" },
+        "durationSeconds": { "type": "integer" },
+        "blinksTriggered": { "type": "integer" },
+        "eyeRestsCompleted": { "type": "integer" },
+        "eyeRestsSkipped": { "type": "integer" },
+        "dayKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "profileId", "profileName", "durationSeconds", "blinksTriggered", "eyeRestsCompleted", "eyeRestsSkipped", "dayKey", "createdAt"]
+    },
+    "SupportRequest": {
+      "title": "SupportRequest",
+      "description": "User support ticket",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "RESOLVED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "subject", "message", "status", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Wellness and maintenance announcements managed by admin",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "published", "createdAt", "updatedAt"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Immutable admin audit log entry",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string" },
+        "action": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminId", "action", "targetUserId", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "User account preferences and settings isolated per user"
+    },
+    "/users/{userId}/profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/ReminderProfile" },
+      "description": "User-owned blink and eye-rest reminder profiles"
+    },
+    "/users/{userId}/schedules/{scheduleId}": {
+      "schema": { "$ref": "#/entities/ReminderSchedule" },
+      "description": "User-owned automated reminder schedules"
+    },
+    "/users/{userId}/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/SessionSummary" },
+      "description": "User-owned aggregated wellness session summaries"
+    },
+    "/users/{userId}/support_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/SupportRequest" },
+      "description": "User-submitted support requests"
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Published wellness announcements readable by signed-in users"
+    },
+    "/admin_audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Admin-only immutable audit log trail"
+    }
+  }
+}

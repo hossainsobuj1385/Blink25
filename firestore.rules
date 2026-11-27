@@ -1,0 +1,329 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email == 'ha2420331@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidSoundType(soundType) {
+      return soundType in ['SOFT_TICK', 'GENTLE_BELL', 'SOFT_POP', 'CALM_CHIME', 'AIR_TONE', 'QUIET_PULSE', 'NO_SOUND'];
+    }
+
+    function isValidTimeHHMM(value) {
+      return value is string && value.size() == 5 && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    // --- ENTITY VALIDATION HELPERS ---
+    function isValidUserAccount(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+        data.accountStatus in ['ACTIVE', 'SUSPENDED'] &&
+        data.themeMode in ['SYSTEM', 'LIGHT', 'DARK'] &&
+        data.languageCode in ['en', 'bn'] &&
+        data.activeProfileId is string && data.activeProfileId.size() >= 1 && data.activeProfileId.size() <= 128 &&
+        data.soundEnabled is bool &&
+        isValidSoundType(data.soundType) &&
+        data.soundVolume is number && data.soundVolume >= 0.0 && data.soundVolume <= 1.0 &&
+        data.notificationsEnabled is bool &&
+        data.focusModeActive is bool &&
+        data.meetingModeActive is bool &&
+        data.meetingModeMinutes is int && data.meetingModeMinutes >= 5 && data.meetingModeMinutes <= 240 &&
+        data.quietHoursEnabled is bool &&
+        isValidTimeHHMM(data.quietHoursStart) &&
+        isValidTimeHHMM(data.quietHoursEnd) &&
+        data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64 &&
+        data.reducedMotion is bool;
+    }
+
+    function isValidReminderProfile(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 50 &&
+        data.profileType in ['WORK', 'STUDY', 'GAMING', 'MEETING', 'RELAX', 'CUSTOM'] &&
+        data.blinkIntervalSeconds is int && data.blinkIntervalSeconds >= 5 && data.blinkIntervalSeconds <= 300 &&
+        data.earlyWarningSeconds is int && data.earlyWarningSeconds >= 0 && data.earlyWarningSeconds < data.blinkIntervalSeconds &&
+        data.eyeRestIntervalMinutes is int && data.eyeRestIntervalMinutes >= 5 && data.eyeRestIntervalMinutes <= 180 &&
+        data.eyeRestDurationSeconds is int && data.eyeRestDurationSeconds >= 5 && data.eyeRestDurationSeconds <= 180 &&
+        data.twentyTwentyTwentyEnabled is bool &&
+        isValidSoundType(data.soundType) &&
+        data.soundVolume is number && data.soundVolume >= 0.0 && data.soundVolume <= 1.0 &&
+        data.visualReminderEnabled is bool &&
+        data.snoozeMinutes is int && data.snoozeMinutes >= 1 && data.snoozeMinutes <= 60 &&
+        data.enabled is bool;
+    }
+
+    function isValidReminderSchedule(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.profileId is string && isValidId(data.profileId) &&
+        data.scheduleName is string && data.scheduleName.size() >= 1 && data.scheduleName.size() <= 60 &&
+        isValidTimeHHMM(data.startTime) &&
+        isValidTimeHHMM(data.endTime) &&
+        data.weekdays is list && data.weekdays.size() >= 1 && data.weekdays.size() <= 7 &&
+        data.weekdays[0] is int &&
+        data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64 &&
+        data.blinkEnabled is bool &&
+        data.eyeRestEnabled is bool &&
+        data.enabled is bool;
+    }
+
+    function isValidSessionSummary(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.profileId is string && isValidId(data.profileId) &&
+        data.profileName is string && data.profileName.size() >= 1 && data.profileName.size() <= 50 &&
+        data.durationSeconds is int && data.durationSeconds >= 0 && data.durationSeconds <= 86400 &&
+        data.blinksTriggered is int && data.blinksTriggered >= 0 && data.blinksTriggered <= 10000 &&
+        data.eyeRestsCompleted is int && data.eyeRestsCompleted >= 0 && data.eyeRestsCompleted <= 500 &&
+        data.eyeRestsSkipped is int && data.eyeRestsSkipped >= 0 && data.eyeRestsSkipped <= 500 &&
+        data.dayKey is string && data.dayKey.size() == 10 && data.dayKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isValidSupportRequest(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 100 &&
+        data.message is string && data.message.size() >= 5 && data.message.size() <= 1000 &&
+        data.status in ['OPEN', 'RESOLVED'];
+    }
+
+    function isValidAnnouncement(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 1000 &&
+        data.published is bool;
+    }
+
+    function isValidAdminAuditLog(data) {
+      return data.adminId is string && data.adminId == request.auth.uid &&
+        data.action is string && data.action.size() >= 1 && data.action.size() <= 80 &&
+        data.targetUserId is string && data.targetUserId.size() >= 1 && data.targetUserId.size() <= 128 &&
+        data.details is string && data.details.size() >= 1 && data.details.size() <= 500;
+    }
+
+    // --- USER ACCOUNT & SUBCOLLECTIONS ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        incoming().keys().hasAll([
+          'userId', 'displayName', 'accountStatus', 'themeMode', 'languageCode',
+          'activeProfileId', 'soundEnabled', 'soundType', 'soundVolume',
+          'notificationsEnabled', 'focusModeActive', 'meetingModeActive',
+          'meetingModeMinutes', 'quietHoursEnabled', 'quietHoursStart',
+          'quietHoursEnd', 'timezone', 'reducedMotion', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'displayName', 'email', 'accountStatus', 'themeMode', 'languageCode',
+          'activeProfileId', 'soundEnabled', 'soundType', 'soundVolume',
+          'notificationsEnabled', 'focusModeActive', 'meetingModeActive',
+          'meetingModeMinutes', 'quietHoursEnabled', 'quietHoursStart',
+          'quietHoursEnd', 'timezone', 'reducedMotion', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().accountStatus == 'ACTIVE' &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidUserAccount(incoming(), userId);
+
+      allow update: if isValidId(userId) &&
+        isValidUserAccount(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        (
+          (isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountStatus', 'updatedAt'])) ||
+          (isOwner(userId) &&
+            incoming().accountStatus == existing().accountStatus &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'email', 'themeMode', 'languageCode', 'activeProfileId',
+              'soundEnabled', 'soundType', 'soundVolume', 'notificationsEnabled',
+              'focusModeActive', 'meetingModeActive', 'meetingModeMinutes',
+              'quietHoursEnabled', 'quietHoursStart', 'quietHoursEnd',
+              'timezone', 'reducedMotion', 'updatedAt'
+            ]))
+        );
+
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /profiles/{profileId} {
+        allow get: if isValidId(userId) && isValidId(profileId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId) && isValidId(profileId) &&
+          isOwner(userId) &&
+          incoming().keys().hasAll([
+            'userId', 'name', 'profileType', 'blinkIntervalSeconds',
+            'earlyWarningSeconds', 'eyeRestIntervalMinutes', 'eyeRestDurationSeconds',
+            'twentyTwentyTwentyEnabled', 'soundType', 'soundVolume',
+            'visualReminderEnabled', 'snoozeMinutes', 'enabled', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'name', 'profileType', 'blinkIntervalSeconds',
+            'earlyWarningSeconds', 'eyeRestIntervalMinutes', 'eyeRestDurationSeconds',
+            'twentyTwentyTwentyEnabled', 'soundType', 'soundVolume',
+            'visualReminderEnabled', 'snoozeMinutes', 'enabled', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+          isValidReminderProfile(incoming(), userId);
+
+        allow update: if isValidId(userId) && isValidId(profileId) &&
+          isOwner(userId) &&
+          isValidReminderProfile(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'profileType', 'blinkIntervalSeconds', 'earlyWarningSeconds',
+            'eyeRestIntervalMinutes', 'eyeRestDurationSeconds', 'twentyTwentyTwentyEnabled',
+            'soundType', 'soundVolume', 'visualReminderEnabled', 'snoozeMinutes',
+            'enabled', 'updatedAt'
+          ]);
+
+        allow delete: if isValidId(userId) && isValidId(profileId) && isOwner(userId);
+      }
+
+      match /schedules/{scheduleId} {
+        allow get: if isValidId(userId) && isValidId(scheduleId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId) && isValidId(scheduleId) &&
+          isOwner(userId) &&
+          incoming().keys().hasAll([
+            'userId', 'profileId', 'scheduleName', 'startTime', 'endTime',
+            'weekdays', 'timezone', 'blinkEnabled', 'eyeRestEnabled', 'enabled',
+            'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'profileId', 'scheduleName', 'startTime', 'endTime',
+            'weekdays', 'timezone', 'blinkEnabled', 'eyeRestEnabled', 'enabled',
+            'createdAt', 'updatedAt'
+          ]) &&
+          incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+          isValidReminderSchedule(incoming(), userId);
+
+        allow update: if isValidId(userId) && isValidId(scheduleId) &&
+          isOwner(userId) &&
+          isValidReminderSchedule(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'profileId', 'scheduleName', 'startTime', 'endTime',
+            'weekdays', 'timezone', 'blinkEnabled', 'eyeRestEnabled',
+            'enabled', 'updatedAt'
+          ]);
+
+        allow delete: if isValidId(userId) && isValidId(scheduleId) && isOwner(userId);
+      }
+
+      match /sessions/{sessionId} {
+        allow get: if isValidId(userId) && isValidId(sessionId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId) && isValidId(sessionId) &&
+          isOwner(userId) &&
+          incoming().keys().hasAll([
+            'userId', 'profileId', 'profileName', 'durationSeconds',
+            'blinksTriggered', 'eyeRestsCompleted', 'eyeRestsSkipped',
+            'dayKey', 'createdAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'profileId', 'profileName', 'durationSeconds',
+            'blinksTriggered', 'eyeRestsCompleted', 'eyeRestsSkipped',
+            'dayKey', 'createdAt'
+          ]) &&
+          incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+          isValidSessionSummary(incoming(), userId);
+
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(sessionId) && isOwner(userId);
+      }
+
+      match /support_requests/{requestId} {
+        allow get: if isValidId(userId) && isValidId(requestId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) && isValidId(requestId) &&
+          isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'subject', 'message', 'status', 'createdAt']) &&
+          incoming().keys().hasOnly(['userId', 'subject', 'message', 'status', 'createdAt']) &&
+          incoming().status == 'OPEN' &&
+          incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+          isValidSupportRequest(incoming(), userId);
+
+        allow update: if isValidId(userId) && isValidId(requestId) &&
+          isAdmin() &&
+          isValidSupportRequest(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+
+        allow delete: if isValidId(userId) && isValidId(requestId) && isOwner(userId);
+      }
+    }
+
+    // --- ANNOUNCEMENTS (ADMIN MANAGED, SIGNED-IN PUBLISHED READ) ---
+    match /announcements/{announcementId} {
+      allow get: if isValidId(announcementId) && isSignedIn() && (existing().published == true || isAdmin());
+      allow list: if isSignedIn() && (existing().published == true || isAdmin());
+
+      allow create: if isValidId(announcementId) &&
+        isAdmin() &&
+        incoming().keys().hasAll(['title', 'message', 'published', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['title', 'message', 'published', 'createdAt', 'updatedAt']) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidAnnouncement(incoming());
+
+      allow update: if isValidId(announcementId) &&
+        isAdmin() &&
+        isValidAnnouncement(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'message', 'published', 'updatedAt']);
+
+      allow delete: if isValidId(announcementId) && isAdmin();
+    }
+
+    // --- ADMIN AUDIT LOGS (IMMUTABLE, ADMIN ONLY) ---
+    match /admin_audit_logs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(logId) &&
+        isAdmin() &&
+        incoming().keys().hasAll(['adminId', 'action', 'targetUserId', 'details', 'createdAt']) &&
+        incoming().keys().hasOnly(['adminId', 'action', 'targetUserId', 'details', 'createdAt']) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        isValidAdminAuditLog(incoming());
+      allow update, delete: if false;
+    }
+  }
+}

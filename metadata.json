@@ -1,0 +1,6 @@
+{
+  "name": "Blink25",
+  "description": "A gentle, privacy-conscious eye-wellness reminder app for healthy screen blink and 20-20-20 rest habits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
