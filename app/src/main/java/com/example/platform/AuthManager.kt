@@ -3,6 +3,7 @@ package com.example.platform
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import android.util.Patterns
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -139,5 +140,18 @@ fun signOut(
                 onSignOutComplete()
             }
         }
+    }
+}
+
+suspend fun sendPasswordReset(email: String): Result<Unit> {
+    val trimmedEmail = email.trim()
+    if (trimmedEmail.isEmpty() || !Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+        return Result.failure(IllegalArgumentException("সঠিক ইমেইল ঠিকানা লিখুন।"))
+    }
+    return try {
+        Firebase.auth.sendPasswordResetEmail(trimmedEmail).await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 }
