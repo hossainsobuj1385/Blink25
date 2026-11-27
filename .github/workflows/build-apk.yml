@@ -40,6 +40,22 @@ jobs:
           fi
           cp -f debug.keystore app/debug.keystore
 
+      - name: Prepare google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+              echo "::error::Missing app/google-services.json! Add GitHub Secret GOOGLE_SERVICES_JSON or upload app/google-services.json to the repo."
+              exit 1
+            fi
+            if printf '%s' "$GOOGLE_SERVICES_JSON" | grep -q '^[[:space:]]*{'; then
+              printf '%s\n' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            else
+              printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > app/google-services.json
+            fi
+          fi
+
       - name: Build Debug APK
         run: gradle :app:assembleDebug --no-daemon
 
