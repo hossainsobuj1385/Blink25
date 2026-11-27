@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.RemoveRedEye
 import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,8 +34,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -56,6 +61,8 @@ import com.example.R
 import com.example.i18n.LocalStrings
 import com.example.platform.attemptAutoSignIn
 import com.example.platform.onGoogleSignInClicked
+import com.example.platform.sendPasswordReset
+import kotlinx.coroutines.launch
 
 @Composable
 fun AuthScreen(
@@ -69,6 +76,13 @@ fun AuthScreen(
     var isCheckingAutoSignIn by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Password reset state
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+    var isSendingReset by remember { mutableStateOf(false) }
+    var resetError by remember { mutableStateOf<String?>(null) }
+    var resetSuccess by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         attemptAutoSignIn(
@@ -270,6 +284,105 @@ fun AuthScreen(
                     )
                 }
             }
+
+            TextButton(
+                onClick = {
+                    resetEmail = ""
+                    resetError = null
+                    resetSuccess = false
+                    showResetDialog = true
+                },
+                enabled = !isLoading,
+                modifier = Modifier.testTag("forgot_password_button")
+            ) {
+                Text(
+                    text = "পাসওয়ার্ড ভুলে গেছেন?",
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isSendingReset) showResetDialog = false
+            },
+            title = { Text("পাসওয়ার্ড রিসেট") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (resetSuccess) {
+                        Text(
+                            text = "রিসেট লিংক পাঠানো হয়েছে। আপনার ইমেইলের ইনবক্স (এবং স্প্যাম ফোল্ডার) দেখুন।",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        Text(
+                            text = "আপনার অ্যাকাউন্টের ইমেইল লিখুন, আমরা একটি রিসেট লিংক পাঠাব।",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = resetEmail,
+                            onValueChange = {
+                                resetEmail = it
+                                resetError = null
+                            },
+                            label = { Text("ইমেইল") },
+                            singleLine = true,
+                            enabled = !isSendingReset,
+                            isError = resetError != null,
+                            supportingText = resetError?.let { msg -> { Text(msg) } },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("reset_email_field")
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (resetSuccess) {
+                    TextButton(onClick = { showResetDialog = false }) {
+                        Text("ঠিক আছে")
+                    }
+                } else {
+                    TextButton(
+                        onClick = {
+                            isSendingReset = true
+                            resetError = null
+                            scope.launch {
+                                val result = sendPasswordReset(resetEmail)
+                                isSendingReset = false
+                                result
+                                    .onSuccess { resetSuccess = true }
+                                    .onFailure { e ->
+                                        resetError = e.localizedMessage ?: "রিসেট ইমেইল পাঠানো যায়নি।"
+                                    }
+                            }
+                        },
+                        enabled = !isSendingReset
+                    ) {
+                        if (isSendingReset) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("লিংক পাঠান")
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                if (!resetSuccess) {
+                    TextButton(
+                        onClick = { showResetDialog = false },
+                        enabled = !isSendingReset
+                    ) {
+                        Text("বাতিল")
+                    }
+                }
+            }
+        )
     }
 }
